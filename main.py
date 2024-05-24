@@ -1,4 +1,3 @@
-import os
 import time
 import logging
 from database import Database
@@ -8,6 +7,7 @@ BASE_URL = 'https://jobs.ge'
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
 
 class JobScraper:
     def __init__(self, base_url):
@@ -71,11 +71,20 @@ class JobScraper:
             time.sleep(2)  # Throttle requests to avoid overloading the server
 
     def run(self):
+        start_time = time.time()
         self.database.connect()
         self.load_existing_job_urls()
         self.scrape_jobs()
         self.database.close()
+        self.scraper.close()
+        end_time = time.time()
+        execution_time = end_time - start_time
+        logging.info(f"Total execution time: {execution_time:.2f} seconds")
 
+
+def run_scraper():
+    job_scraper_instance = JobScraper(BASE_URL)
+    job_scraper_instance.run()
 
 if __name__ == "__main__":
     job_scraper = JobScraper(BASE_URL)
