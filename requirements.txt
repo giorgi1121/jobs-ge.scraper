@@ -3,3 +3,5 @@ python-dotenv==1.0.1
 bs4==0.0.2
 selenium==4.21.0
 webdriver-manager==4.0.1
+aiohttp==3.9.5
+databases

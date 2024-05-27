@@ -1,3 +1,4 @@
+import asyncio
 import time
 import logging
 from database import Database
@@ -14,8 +15,7 @@ class JobScraper:
         self.database = Database()
         self.scraper = WebScraper(base_url)
         self.unique_job_urls = set()
-        self.scraped_pages = set()
-        self.previous_job_details = []
+        self.jobs = []
 
     def load_existing_job_urls(self):
         url_query = "SELECT job_url FROM jobs"
@@ -33,48 +33,44 @@ class JobScraper:
         except Exception as e:
             logging.error(f"Error inserting job into database: {e}")
 
-    def scrape_jobs(self):
-        page_number = 1
-        while True:
-            if page_number in self.scraped_pages:
-                logging.info(f"Page {page_number} has already been scraped. Stopping to avoid looping.")
-                break
+    async def async_insert_job(self, job):
+        return await asyncio.to_thread(self.insert_job, job)
 
-            url = f"{BASE_URL}/en/?page={page_number}&q=&cid=0&lid=0&jid=0&in_title=0&has_salary=0&is_ge=0&for_scroll=yes"
-            logging.info(f"Scraping page {page_number}: {url}")
-            soup = self.scraper.scrape_page(url)
-            if soup is None:
-                logging.warning("Failed to retrieve the page or no content found. Stopping scraping.")
-                break
+    async def scrape_jobs(self, page_number):
+        url = f"{BASE_URL}/en/?page={page_number}&q=&cid=0&lid=0&jid=0&in_title=0&has_salary=0&is_ge=0&for_scroll=yes"
+        logging.info(f"Scraping page {page_number}: {url}")
+        soup = await self.scraper.scrape_page(url)
 
-            job_details = self.scraper.extract_job_details(soup)
-            if not job_details:
-                logging.info("No job details found on the current page. Stopping scraping.")
-                break
+        if soup is None:
+            logging.warning("Failed to retrieve the page or no content found. Stopping scraping.")
+            return
 
-            if job_details == self.previous_job_details:
-                logging.info("Detected looping of job listings. Stopping scraping.")
-                break
+        job_details = self.scraper.extract_job_details(soup)
+        if not job_details:
+            logging.info("No job details found on the current page. Stopping scraping.")
+            return
 
-            self.previous_job_details = job_details
-            self.scraped_pages.add(page_number)
+        for job in job_details:
+            if job['job_url'] in self.unique_job_urls:
+                logging.info(f"Duplicate job URL found: {job['job_url']}. Skipping insertion.")
+                continue
+            self.unique_job_urls.add(job['job_url'])
+            self.jobs.append(job)
 
-            for job in job_details:
-                if job['job_url'] in self.unique_job_urls:
-                    logging.info(f"Duplicate job URL found: {job['job_url']}. Skipping insertion.")
-                    continue
-                self.unique_job_urls.add(job['job_url'])
-                self.insert_job(job)
+        self.database.commit()
+        return self.jobs
 
-            self.database.commit()
-            page_number += 1
-            time.sleep(2)  # Throttle requests to avoid overloading the server
-
-    def run(self):
+    async def run(self):
         start_time = time.time()
         self.database.connect()
         self.load_existing_job_urls()
-        self.scrape_jobs()
+        tasks = [self.scrape_jobs(i) for i in range(1, 2)]
+        all_jobs = await asyncio.gather(*tasks)
+        task_to_list = []
+        for each_page_job in all_jobs:
+            for job in each_page_job:
+                task_to_list.append(self.insert_job(job))
+        await asyncio.gather(*task_to_list)
         self.database.close()
         self.scraper.close()
         end_time = time.time()
@@ -82,10 +78,10 @@ class JobScraper:
         logging.info(f"Total execution time: {execution_time:.2f} seconds")
 
 
-def run_scraper():
+async def run_scraper():
     job_scraper_instance = JobScraper(BASE_URL)
-    job_scraper_instance.run()
+    await job_scraper_instance.run()
+
 
 if __name__ == "__main__":
-    job_scraper = JobScraper(BASE_URL)
-    job_scraper.run()
+    asyncio.run(run_scraper())

@@ -26,9 +26,13 @@ class WebScraper:
         chrome_options.add_argument("--disable-dev-shm-usage")
         self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
 
-    def scrape_page(self, url):
+    def http_get_sync(self, url: str):
+        response = requests.get(url)
+        return response
+
+    async def scrape_page(self, url):
         try:
-            response = requests.get(url)
+            response = await asyncio.to_thread(self.http_get_sync, url)
             if response.status_code != 200:
                 logging.error(f"Error: Unable to retrieve page content, status code {response.status_code}.")
                 return None
@@ -43,7 +47,6 @@ class WebScraper:
             return soup
         except Exception as e:
             logging.error(f"Error: {e}")
-            return None
 
     def extract_job_details(self, soup):
         job_details = []
