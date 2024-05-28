@@ -1,58 +1,36 @@
-import psycopg2
-from psycopg2 import OperationalError
 import os
 import logging
-from dotenv import load_dotenv
-
-load_dotenv()
+from databases import Database
 
 
-class Database:
-    def __init__(self):
-        self.conn = None
+class AsyncDatabase:
+    def __init__(self, db_url):
+        self.db = Database(db_url)
 
-    def connect(self):
+    async def connect(self):
         try:
-            self.conn = psycopg2.connect(
-                dbname=os.getenv("POSTGRES_DB"),
-                user=os.getenv("POSTGRES_USER"),
-                password=os.getenv("POSTGRES_PASSWORD"),
-                host=os.getenv("POSTGRES_HOST"),
-                port="5432"
-            )
+            await self.db.connect()
             logging.info("Database connected successfully.")
-        except OperationalError as e:
+        except Exception as e:
             logging.error(f"Error connecting to database: {e}")
-            self.conn = None
-        return self.conn
 
-    def execute_query(self, query, params=None, fetch=False):
-        if self.conn is None:
-            logging.error("No database connection.")
-            return None
+    async def execute_query(self, query, params=None, fetch=False):
         try:
-            cur = self.conn.cursor()
-            cur.execute(query, params)
-            if fetch:
-                result = cur.fetchall()
-                cur.close()
-                return result
-            else:
-                self.conn.commit()
-                cur.close()
-                return None
-        except psycopg2.Error as e:
+            async with self.db.transaction():
+                if fetch:
+                    result = await self.db.fetch_all(query, values=params)
+                    return result
+                else:
+                    await self.db.execute(query, values=params)
+        except Exception as e:
             logging.error(f"Database query error: {e}")
-            return None
 
-    def commit(self):
-        if self.conn:
-            try:
-                self.conn.commit()
-            except psycopg2.Error as e:
-                logging.error(f"Error committing to database: {e}")
+    async def commit(self):
+        pass  # No need for explicit commit with the databases library
 
-    def close(self):
-        if self.conn:
-            self.conn.close()
+    async def close(self):
+        try:
+            await self.db.disconnect()
             logging.info("Database connection closed.")
+        except Exception as e:
+            logging.error(f"Error closing database connection: {e}")

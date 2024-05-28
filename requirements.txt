@@ -5,3 +5,4 @@ selenium==4.21.0
 webdriver-manager==4.0.1
 aiohttp==3.9.5
 databases
+asyncpg
